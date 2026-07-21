@@ -1,0 +1,11 @@
+*.exe
+*.linux
+*.out
+/bin/
+/dist/
+*.bin
+captured/
+.env
+*.pem
+*.key
+*.pfx
