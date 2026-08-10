@@ -4,7 +4,7 @@
 /bin/
 /dist/
 *.bin
-captured/
+measured/
 .env
 *.pem
 *.key

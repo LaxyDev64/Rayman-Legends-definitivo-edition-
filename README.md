@@ -28,11 +28,11 @@ cp example.env .env   # then edit .env
 go run .
 ```
 
-No secrets, keys, or captured data are baked into the source — everything comes from the environment.
+No secrets, keys, or measured data are baked into the source — everything comes from the environment.
 
 ## What this is not
 
-Ships **no** Nintendo code, keys, captured data, or copyrighted assets. Independent reimplementation
+Ships **no** Nintendo code, keys, measured data, or copyrighted assets. Independent reimplementation
 for a community-run service; not affiliated with Nintendo. The NEX access key is a public per-title
 value, not a secret.
 

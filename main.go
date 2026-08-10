@@ -1,6 +1,7 @@
-// Command ssbu runs the Super Smash Bros. Ultimate online servers (auth + secure) on
-// the Nextendo NEX stack — a from-scratch NEX implementation with no third-party
-// dependencies.
+// Command mk8 runs the Mario Kart 8 Deluxe online servers (auth + secure) on the
+// Nextendo NEX stack — our own closed-source NEX implementation, with 
+// the previous stack code. It is the online server
+// servers built on the previous stack.
 //
 // Two NEX servers run in one process:
 //   - auth   (:443)   TicketGranting — LoginEx issues the Kerberos ticket.
@@ -26,17 +27,16 @@ const (
 	accessKey      = "9587602b"
 	nexVersion     = 40000
 	securePID      = 2
+	securePassword = "securepasswordplz1"
 	sessionKeyLen  = 32
 )
-
-var securePassword = envOr("NEXTENDO_SECURE_PASSWORD", "securepasswordplz1")
 
 var (
 	nextendoHost = envOr("NEXTENDO_HOST", "127.0.0.1")
 	authPort     = envOrInt("AUTH_PORT", 443)
 	securePort   = envOrInt("SECURE_PORT", 60005)
-	certFile     = envOr("CERT_FILE", "cert.pem")
-	keyFile      = envOr("KEY_FILE", "key.pem")
+	certFile     = envOr("CERT_FILE", `cert.pem`)
+	keyFile      = envOr("KEY_FILE", `key.pem`)
 
 	// nextendoSecret signs "nx2." NEX login tokens issued by the account service. It
 	// MUST be byte-identical to nextendo-account's secret or token validation fails.
@@ -44,7 +44,7 @@ var (
 	// the shared key file (the account has no env → it hex-decodes nextendo_secret.key).
 	nextendoSecret = loadNextendoSecret()
 	// requireAccount, when "1", rejects any login without a valid Nextendo token,
-	// restricting the server to account holders.
+	// keeping the closed-source test server private to account holders.
 	requireAccount = os.Getenv("NEXTENDO_REQUIRE_ACCOUNT") == "1"
 )
 
@@ -57,9 +57,10 @@ func main() {
 	// its Kerberos ticket in CONNECT. With "prudp" it completes the handshake but sends an
 	// EMPTY CONNECT payload — no ticket, no session key — so the connection is never really
 	// authenticated. DataStore reads still work (the online menu looks fine) but SSBU dies
-	// the moment Pia needs the session for matchmaking. The retail secure server (prudps)
-	// answers CONNECT with a 104-byte ticket; a "prudp" scheme yields CONNECT plen=0 with an
-	// otherwise byte-identical handshake. This also removes the need for the PID-by-IP workaround.
+	// the moment Pia needs the session for matchmaking. Established by measurement of the
+	// secure connection with the client held constant: proven server (prudps) -> CONNECT
+	// plen=104; ours (prudp) -> CONNECT plen=0, with an otherwise byte-identical handshake.
+	// This is also what removes the need for the PID-by-IP workaround.
 	secureURL := nex.NewStationURL("prudps")
 	secureURL.Set("address", nextendoHost)
 	secureURL.SetInt("port", securePort)
@@ -90,10 +91,11 @@ func main() {
 	// CONNECT arrives with an empty payload, the session is never really authenticated, and
 	// SSBU dies once Pia needs the session key for matchmaking (DataStore reads still work,
 	// so the online menu looks fine). Answering 0, like the proven server, makes the client
-	// send its full 104-byte ticket. The retail secure server answers SYN-ACK option=0 ->
-	// CONNECT plen=104; option=5 -> CONNECT plen=0. This is scoped to the secure endpoint on
-	// purpose — the auth (:443) is a separate PRUDP server and stops receiving logins
-	// entirely if its minor version is forced to 0.
+	// send its full 104-byte ticket. Established by measurement of the SECURE connection
+	// with the client held constant: proven server SYN-ACK option=0 -> CONNECT plen=104;
+	// ours option=5 -> CONNECT plen=0. This is scoped to the secure endpoint on purpose —
+	// the auth (:443) is a separate PRUDP server, is NOT covered by that measured, and stops
+	// receiving logins entirely if its minor version is forced to 0.
 	secureSettings := nex.NewSwitchSettings(accessKey, nexVersion)
 	secureSettings.PrudpMinorVersion = 0
 	secureEndpoint := nex.NewEndpoint(secureSettings)
@@ -106,9 +108,9 @@ func main() {
 	secureEndpoint.Register(nex.ProtocolMatchMakingExt, mm.MatchMakingExtHandler())
 	secureEndpoint.Register(nex.ProtocolNATTraversal, nex.NATTraversalHandler())
 	secureEndpoint.Register(nex.ProtocolRanking, nex.RankingHandler())
-	// SSBU: DataStore (0x73) + Utility (0x6E) are answered by a stub handler (empty list)
-	// instead of the typed handlers that returned NotImplemented and froze SSBU's online
-	// init. This REPLACES ProtocolUtility.
+	// SSBU: DataStore (0x73) + Utility (0x6E) are answered by the measured-response
+	// replay (the wire format) instead of the typed handlers that returned
+	// NotImplemented and froze SSBU's online init. This REPLACES ProtocolUtility.
 	setupSSBUInitReplay(secureEndpoint)
 	// Pia 5.19 type-8 keepalive: ACK it so SSBU's online menu doesn't soft-lock.
 	setupSSBUType8Keepalive(secureEndpoint)
@@ -117,6 +119,7 @@ func main() {
 		logSecure(c, req)
 		noteRMC(c, req) // feed the monitoring dashboard
 	}
+	secureEndpoint.OnNATProperties = noteNAT // dashboard: NAT type + ping from ReportNATProperties
 	secureEndpoint.OnConnect = func(c *nex.Connection) {
 		fmt.Printf("[SSBU Secure] connected pid=%d id=%d addr=%s\n", c.PID, c.ID, c.RemoteAddr)
 	}
@@ -137,10 +140,10 @@ func main() {
 	secureEndpoint.StartReaper()
 	go startDashboard(secureEndpoint, mm)
 
-	// When the auth is fronted by a TLS-passthrough proxy (Traefik on the shared
+	// When the auth is fronted by a TLS-passthrough proxy (the reverse proxy on the shared
 	// :443), enable PROXY protocol so the auth sees the console's REAL IP — otherwise
 	// the IP-based PID inheritance misses the direct secure connection and the session
-	// gets a placeholder PID. Direct deployments (a direct host) leave it off.
+	// gets a placeholder PID. Direct deployments (a host) leave it off.
 	proxyProto := os.Getenv("NEXTENDO_PROXY_PROTOCOL") == "1"
 	go func() {
 		fmt.Printf("[SSBU Auth] listening WSS :%d (proxyProto=%v, secure URL -> %s)\n", authPort, proxyProto, secureURL.String())
@@ -164,7 +167,7 @@ func main() {
 // resolveUser maps a LoginEx username to an account. A valid "nx2." Nextendo
 // token resolves to its persistent PID; anything else gets a stable anonymous
 // PID derived from the username (so the same console keeps the same identity).
-func resolveUser(username string, _ []byte) (uint64, []byte, bool) {
+func resolveUser(username string, extraData []byte) (uint64, []byte, bool) {
 	// The source key encrypts the client ticket and is handed back as pSourceKey,
 	// so the console decrypts it. It MUST be 32 bytes (the Switch kerberos key
 	// size) — a 16-byte key makes the console reject the ticket. Derive it
@@ -188,18 +191,34 @@ func resolveUser(username string, _ []byte) (uint64, []byte, bool) {
 	// = the account the game knows itself by (hashing it breaks Pia's self-recognition
 	// → 2618-562 SessionKeepFailed).
 	if n, err := strconv.ParseUint(username, 10, 64); err == nil && n >= 1800000000 {
-		// FAILLE D AUTHENTIFICATION CONNUE. Ce chemin accepte un PID NU comme identite :
-		// aucun jeton, aucune signature. Les PID etant sequentiels depuis 1800000001, il
-		// suffit d envoyer le numero d un autre membre pour jouer sous son identite — et,
-		// via la garde « un seul endroit », l empecher lui-meme de jouer.
-		// On ne peut pas l interdire sechement : l emulateur distribue envoie precisement
-		// ce PID nu. Le refus est donc derriere un interrupteur, a activer quand une build
-		// envoyant le jeton nx2 signe sera deployee. En attendant on journalise chaque usage.
-		if requireSignedToken() {
-			fmt.Printf("[Auth] pid=%d REFUSE : identite par PID nu desactivee (jeton nx2 signe requis)\n", n)
-			return 0, nil, false
+		// Le jeu envoie un PID NU comme identité (aucune signature). Les PID étant
+		// séquentiels depuis 1800000001, envoyer le numéro d'un autre membre suffirait à
+		// jouer sous son identité — et, via la garde « un seul endroit », à l'empêcher
+		// lui-même de jouer. On referme la faille en EXIGEANT la preuve cryptographique
+		// que l'émulateur (>= 1.7.1) glisse dans l'extraData du login : le jeton nx2 signé
+		// (HMAC au secret serveur) porté par le claim "nnex" du id_token BAAS. On valide ce
+		// jeton et on exige qu'il prouve EXACTEMENT le PID annoncé.
+		provenPID, proven := uint64(0), false
+		if tok, ok := nex.NexTokenFromLoginExtraData(extraData); ok {
+			provenPID, proven = nextendoPIDFromToken(tok)
 		}
-		fmt.Printf("[Auth] pid=%d identite par PID NU (non authentifiee — cf. NEXTENDO_REQUIRE_SIGNED_TOKEN)\n", n)
+		// L'enforce ne cible que la plage émulateur (username = le PID du compte lui-même).
+		// Une vraie Switch (NSA >= 1810000000) n'envoie pas de jeton nx2 ; elle reste sur
+		// resolveNSAtoPID pour ne pas casser les consoles CFW légitimes.
+		if n < 1810000000 {
+			switch {
+			case proven && provenPID == n:
+				fmt.Printf("[Auth][bind] pid=%d OK : le nx2 prouve le PID\n", n)
+			case proven && provenPID != n:
+				fmt.Printf("[Auth][bind] pid=%d USURPATION : le nx2 prouve %d, pas %d\n", n, provenPID, n)
+			default:
+				fmt.Printf("[Auth][bind] pid=%d SANS PREUVE : aucun nx2 dans l'extraData (build < 1.7.1 ?)\n", n)
+			}
+			if requireSignedToken() && !(proven && provenPID == n) {
+				fmt.Printf("[Auth] pid=%d REFUSÉ : identité non prouvée (jeton nx2 signé requis)\n", n)
+				return 0, nil, false
+			}
+		}
 		pid, kind := n, "ryujinx"
 		if n >= 1810000000 { // vraie Switch : NSA id -> PID de compte (online = comptes Nextendo UNIQUEMENT)
 			kind = "switch"
@@ -233,6 +252,11 @@ func resolveUser(username string, _ []byte) (uint64, []byte, bool) {
 	return anonymousPID(username), sourceKey, true
 }
 
+// revokedNexPayloads lists leaked nex_token payloads (pid.username.expiry) that must be
+// rejected even though their HMAC is valid, without rotating the shared secret. Populated
+// per deployment.
+var revokedNexPayloads = map[string]bool{
+}
 // nextendoPIDFromToken validates a "nx2.<b64(pid.username.expiry)>.<b64(hmac)>"
 // token signed by the account service (HMAC-SHA256, "nex:" prefix).
 func nextendoPIDFromToken(s string) (uint64, bool) {
@@ -251,6 +275,9 @@ func nextendoPIDFromToken(s string) (uint64, bool) {
 	mac.Write([]byte("nex:" + string(raw)))
 	want := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 	if !hmac.Equal([]byte(want), []byte(parts[1])) {
+		return 0, false
+	}
+	if revokedNexPayloads[string(raw)] { // jeton fuité (release 1.6.5-win) — refusé malgré une signature valide
 		return 0, false
 	}
 	f := strings.SplitN(string(raw), ".", 3) // pid.username.expiry
