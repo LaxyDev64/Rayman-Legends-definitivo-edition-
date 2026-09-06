@@ -9,3 +9,17 @@ measured/
 *.pem
 *.key
 *.pfx
+
+# binarios compilados sueltos
+/ssbucs
+/super-smash-bros-ultimate
+/super-smash-bros-ultimatecs
+
+# ⚠️ EXCEPCION, y no es cosmetica.
+#
+# La regla `*.bin` de arriba ignoraba en silencio las respuestas capturadas de
+# consola. Por eso el repositorio tenia un tocon y los datos vivian unicamente
+# dentro del binario desplegado: nadie los omitio a proposito, git los descartaba
+# sin decir nada. Reconstruir desde este arbol rompia quickplay y costo una tarde
+# entender por que.
+!captures/*.bin
