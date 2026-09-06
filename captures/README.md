@@ -1,46 +1,63 @@
 # Respuestas capturadas de una consola real
 
-Estos ficheros son respuestas que una Switch de verdad recibio de los servidores de
-Nintendo, y que el servidor reproduce tal cual. No se pueden deducir ni regenerar: o se
-tienen o no se tienen.
+Respuestas que una Switch recibio de los servidores de Nintendo y que el servidor
+reproduce tal cual. No se deducen ni se regeneran: o se tienen o no se tienen.
 
-| Fichero | Metodo | Bytes | Forma |
+## El mapa
+
+| Fichero | Metodo | Bytes | Certeza |
 |---|---|---|---|
-| `resp_0x6e_07.bin` | Utility 7, `GetIntegerSettings` | 2590 | u32 numero de entradas (431), luego pares clave u16 + valor u32 |
-| `resp_0x73_60.bin` | DataStore 60 | 15704 | u32 numero de elementos (25), luego la lista |
+| `resp_0x6e_07.bin` | Utility 7, `GetIntegerSettings` | 2590 | segura |
+| `resp_0x6e_09.bin` | Utility 9 | 17 | segura |
+| `resp_0x6e_10.bin` | Utility 10 | 10 | segura |
+| `resp_0x73_21.bin` | DataStore 21 | 8 | segura |
+| `resp_0x73_60.bin` | DataStore 60 | 15704 | segura |
+| `resp_0x73_84.bin` | DataStore 84 | 29 | segura |
+| `resp_0x73_95.bin` | DataStore 95 | 6 | segura |
+| `resp_4bytes_A_00000000.bin` | Utility 11 **o** DataStore 61 | 4 | ⚠️ AMBIGUA |
+| `resp_4bytes_B_64000000.bin` | la otra de las dos | 4 | ⚠️ AMBIGUA |
+
+`0x73.82` y `0x73.83` responden CERO bytes: no hay nada que guardar, pero hay que
+contestarlos igualmente con cuerpo vacio.
+
+Las siete primeras son seguras porque su longitud es unica en la tabla. Las dos de cuatro
+bytes valen `00000000` y `64000000` (o sea 0 y 100) y no se pudo decidir cual va a cual:
+probar las dos combinaciones en consola cuesta menos que seguir leyendo el binario.
 
 ## Por que estan aqui
 
 El 2026-09-06 se reconstruyo el servidor desde este repositorio y **quickplay dejo de
-funcionar**, mientras que las arenas seguian bien. La causa: el binario que llevaba un mes
-en produccion era del 11 de agosto y este arbol tiene un solo commit, del 21 de julio. Tres
-semanas de trabajo nunca subidas, y entre ellas estas capturas.
+funcionar** mientras las arenas seguian bien. La causa no era el codigo: este arbol tiene un
+commit del 21 de julio y el binario en produccion era del 11 de agosto. Tres semanas nunca
+subidas, y entre ellas estas capturas.
 
-`init_replay.go` lo dice de si mismo: es un tocon que responde lista vacia a todo. Con eso,
-el metodo 60 —que la consola llama unas cien veces cada quince minutos— devolvia cero
-elementos, y el juego respondia *"You can't play online because your connection is poor"*.
+`init_replay.go` lo dice de si mismo: es un tocon que responde lista vacia a todo. Con eso
+el metodo 0x73.60 —que la consola llama unas cien veces cada quince minutos— devolvia cero
+elementos y el juego mostraba *"You can't play online because your connection is poor"*.
+Las arenas no usan ese metodo; por eso funcionaban y despistaban.
 
-Se recuperaron leyendo el binario de agosto: en un binario de Go una cadena embebida es un
-par (puntero, longitud), asi que se busco la longitud exacta que el propio registro del
-servidor imprimia (`0x73.60 -> 15704 captured bytes`) y se tradujo la direccion virtual a
-desplazamiento con las cabeceras del ELF. La aritmetica de la tabla de reglajes cuadra al
-byte, lo que confirma que la extraccion es correcta y no un trozo cualquiera.
+## Como se recuperaron
 
-## Lo que FALTA
+En un binario de Go una cadena embebida es un par (puntero, longitud) en la seccion de
+datos. Se busco la longitud que el propio registro del servidor imprimia
+(`0x73.60 -> 15704 captured bytes`), y desde ese par se leyo la tabla entera, traduciendo
+direcciones virtuales a desplazamientos con las cabeceras del ELF.
 
-El binario de agosto reproduce **once** metodos. Estos dos son los grandes; los otros nueve
-son de 0 a 29 bytes y no se pudieron localizar por longitud sin ambiguedad:
+Dos trampas por el camino, anotadas para quien repita esto:
 
-    0x6e.9 (17)  0x6e.10 (10)  0x6e.11 (4)
-    0x73.21 (8)  0x73.61 (4)   0x73.82 (0)  0x73.83 (0)  0x73.84 (29)  0x73.95 (6)
+Los pares estaban desplazados ocho bytes respecto a una rejilla de dieciseis, asi que leerlos
+alineados daba basura convincente. Y la mayoria de coincidencias por longitud eran nombres de
+cabecera HTTP de la biblioteca estandar (`Host`, `Cookie`, `Etag`...), no capturas: hay que
+mirar el contenido, no solo el tamano.
 
-Son pequenos y probablemente triviales (una lista vacia son cuatro ceros), pero **no estan
-comprobados**. Antes de volver a desplegar una reconstruccion hay que recuperarlos tambien,
-o registrarlos desde el binario de agosto mientras siga en produccion.
+La extraccion se comprobo por aritmetica y no por fe: la tabla de reglajes declara 431
+entradas y mide `4 + 431*6 = 2590` bytes, exactamente su tamano.
 
-## Regla que sale de todo esto
+## Regla
 
-Reconstruir Smash desde este repositorio **rompe quickplay** mientras falten estas
-respuestas. Vale hoy y valdra dentro de seis meses. El binario del 11 de agosto se conserva
-en el servidor como `/opt/ssbu/ssbucs.bak-20260811` y es, por ahora, la unica copia completa
-de lo que hace falta.
+Reconstruir Smash desde este repositorio rompe quickplay mientras estos ficheros no esten
+CABLEADOS en el codigo. Estan guardados, que era lo urgente, pero `init_replay.go` sigue
+siendo un tocon y no los lee todavia.
+
+El binario del 11 de agosto se conserva en el servidor como `/opt/ssbu/ssbucs.bak-20260811`
+y sigue siendo la referencia contra la que comprobar cualquier reconstruccion.
