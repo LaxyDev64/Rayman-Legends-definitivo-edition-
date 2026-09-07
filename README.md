@@ -1,41 +1,49 @@
-<h1 align="center">Rayman-Legends-definitive-edition</h1>
+# rdv — prototipo de protocolo Quazal RDV para Rayman Legends (Switch)
 
-<p align="center"><b>Nextendo Network game server for Rayman Legends definitivo edition.</b></p>
+Prototipo standalone en Go. Es un punto de partida, no una implementación
+confirmada byte a byte.
 
-<p align="center">
-  <img src="https://img.shields.io/badge/license-PolyForm%20Shield%201.0.0-orange" alt="License">
-  <img src="https://img.shields.io/badge/go-1.23%2B-00ADD8" alt="Go 1.23+">
-</p>
+## Qué hay aquí
 
----
+- `stream.go` — lector/escritor binario mínimo para los tipos comunes
+  NEX/RDV (String, List<T>, primitivos, DateTime). Standalone para que
+  este prototipo compile solo; en la integración real con tu fork
+  `nextendo-nex` debería sustituirse por tu propio `stream.go`/`rmc.go`,
+  que ya implementan esto (probablemente de forma más completa).
 
-## What is this?
+- `ols_storage.go` — protocolo específico de juego **OLS Storage** (ID
+  200). Esta parte está bien fundamentada: la spec completa (16 métodos,
+  todos los structs) viene documentada por Kinnay's NintendoClients wiki
+  para la versión Wii U de Rayman Legends. Se asume que la lógica de
+  juego es la misma en Switch (Ubisoft comparte esa capa entre
+  plataformas), pero **falta confirmar** que el formato exacto de los
+  mensajes no cambió entre versiones.
 
-The NEX game server for **Super Smash Bros. Ultimate** on [Nextendo Network](https://nextendo.network)
-— authentication, matchmaking, NAT traversal, and the online-init handlers (DataStore `0x73` /
-Utility `0x6E`) that bring SSBU's online mode up. Built on the
-[**nextendo-nex**](https://github.com/NextendoNetwork/nextendo-nex) core.
+- `simple_auth.go` — protocolo **Simple Authentication** (ID 16). Esta
+  parte SÍ es un placeholder débil: no hay spec pública tan detallada
+  como la de OLS Storage. La forma de los mensajes es una suposición
+  razonable, no una confirmación.
 
-> **DataStore / Utility init is a stub.** SSBU calls a set of DataStore and Utility getters during
-> the online bring-up. This server answers them with a minimal valid response (empty list) so the
-> game proceeds; a full server-side implementation is not yet part of this tree, so online play is
-> not complete out of the box.
+## Qué falta / supuestos a validar
 
-## Running
+1. **Transporte.** Se asume que Quazal RDV comparte el mismo PRUDP/RMC
+   que ya implementa `nextendo-nex` (cierto en términos generales — NEX
+   deriva de RDV — pero puede haber diferencias de versión/config no
+   confirmadas).
+2. **Simple Authentication.** Placeholder — necesita reverse engineering
+   real (ver `acb-rdv`/`QuazalWV` en C#, o capturar tráfico).
+3. **OLS Storage en Switch específicamente.** Documentado para Wii U;
+   asumido igual en Switch. Puede haber cambios de campos si Ubisoft
+   actualizó el protocolo para el port de 2017.
+4. **Autenticación de más alto nivel.** No está claro si Switch sigue
+   usando el viejo esquema HTTP (`onlineconfigservice.ubi.com` style,
+   como en `acb-rdv`) o algo más moderno (Uplay Win, protocolo 49 de la
+   lista de Kinnay). Por investigar.
+5. **Intercepción de tráfico en una Switch real** (o emulador) para
+   confirmar todo lo anterior.
 
-```sh
-cp example.env .env   # then edit .env
-go run .
-```
+## Próximo paso sugerido
 
-No secrets, keys, or measured data are baked into the source — everything comes from the environment.
-
-## What this is not
-
-Ships **no** Nintendo code, keys, measured data, or copyrighted assets. Independent reimplementation
-for a community-run service; not affiliated with Nintendo. The NEX access key is a public per-title
-value, not a secret.
-
-## License
-
-**[PolyForm Shield License 1.0.0](LICENSE.md)** — source-available.
+Capturar tráfico real del juego (Switch física con red controlada, o
+emulador) para confirmar 2, 3 y 4 antes de invertir más tiempo en
+lógica de servidor que podría no coincidir con el protocolo real.
