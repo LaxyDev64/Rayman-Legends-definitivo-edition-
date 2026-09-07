@@ -1,6 +1,6 @@
-<h1 align="center">super-smash-bros-ultimate</h1>
+<h1 align="center">Rayman-Legends-definitive-edition</h1>
 
-<p align="center"><b>Nextendo Network game server for Super Smash Bros. Ultimate.</b></p>
+<p align="center"><b>Nextendo Network game server for Rayman Legends definitivo edition.</b></p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/license-PolyForm%20Shield%201.0.0-orange" alt="License">
