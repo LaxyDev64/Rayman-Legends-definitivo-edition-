@@ -58,7 +58,7 @@ var cuerpoVacio = map[claveMetodo]bool{
 // Se intercambian sin recompilar, poniendo SSBU_REPLAY_SWAP4=1. Si quickplay falla de una
 // forma nueva, esto es lo primero que hay que probar.
 func ficheroDe(proto uint16, metodo uint32) string {
-	swap := os.Getenv("SSBU_REPLAY_SWAP4") == "1"
+	swap := intercambio4()
 
 	switch (claveMetodo{proto, metodo}) {
 	case claveMetodo{0x6E, 7}:
@@ -91,6 +91,27 @@ func ficheroDe(proto uint16, metodo uint32) string {
 	}
 
 	return ""
+}
+
+// intercambio4 dice si hay que dar la vuelta a las dos capturas de cuatro octetos.
+//
+// Se lee de un FICHERO y no solo del entorno, a proposito: este contenedor es un `docker run`
+// pelado sin compose, asi que cambiar una variable obliga a recrearlo entero — y recrear el
+// juego mas jugado para probar una suposicion es justo lo que no queremos tener que hacer.
+// Con el fichero basta un `touch` y la siguiente llamada ya usa el otro reparto.
+//
+//	touch /opt/ssbu/ssbu_swap4      -> intercambia
+//	rm    /opt/ssbu/ssbu_swap4      -> vuelve al reparto por defecto
+//
+// Se consulta en cada llamada. Son unos pocos accesos por minuto y a cambio no hace falta
+// reiniciar nada para probar la otra combinacion.
+func intercambio4() bool {
+	if os.Getenv("SSBU_REPLAY_SWAP4") == "1" {
+		return true
+	}
+	_, err := os.Stat("/data/ssbu_swap4")
+
+	return err == nil
 }
 
 // replayHandler contesta cada metodo con su captura si la hay, y si no con el repli de
